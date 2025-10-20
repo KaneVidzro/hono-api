@@ -16,6 +16,5 @@ export const authRoutes: ChildRoute[] = [
   { path: '/verify-email', route: authController.verifyEmail },
   { path: '/reset-password', route: authController.resetPassword },
   { path: '/forget-password', route: authController.forgetPassword },
-  {path: '/login', route: authController.login},
-
+  { path: '/login', route: authController.login },
 ];

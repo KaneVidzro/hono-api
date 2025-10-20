@@ -3,82 +3,88 @@
 import { Hono } from 'hono';
 import { prisma } from '../../lib/prisma';
 import { randomBytes } from 'crypto';
+import { sign } from 'hono/jwt';
 
 export const magicLinkController = new Hono();
 
 /**
  * Step 1: Request Magic Link
- * Example: POST /auth/magic/request
  */
-
 magicLinkController.post('/request', async (c) => {
   const { email } = await c.req.json();
   if (!email) return c.json({ error: 'Email is required' }, 400);
 
-  // Check if user exists
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    return c.json({ error: 'No account exist matching this email' }, 404);
-  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (!user) return c.json({ error: 'No account exists matching this email' }, 404);
 
-  // Generate token
+  // Optional: cooldown check
+  const existing = await prisma.magicLinkToken.findFirst({
+    where: { email: normalizedEmail, expires: { gt: new Date() } },
+  });
+  if (existing) return c.json({ error: 'Magic link already sent. Try again soon.' }, 429);
+
+  await prisma.magicLinkToken.deleteMany({ where: { email: normalizedEmail } });
+
   const token = randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes expiry
+  const expires = new Date(Date.now() + 1000 * 60 * 10);
 
-  // delete any existing tokens for this email
-  await prisma.verificationToken.deleteMany({
-    where: { email },
+  await prisma.magicLinkToken.create({
+    data: { email: normalizedEmail, token, expires },
   });
 
-  // Save verification token
-  await prisma.verificationToken.create({
-    data: { email, token, expiresAt },
-  });
-
-  // Construct magic link (adjust for frontend or production domain)
   const magicLink = `http://localhost:3000/auth/magic/callback?token=${token}`;
+  console.log(`📩 Magic link for ${normalizedEmail}: ${magicLink}`);
 
-  // (TODO) send email via Nodemailer / Resend / etc.
-  console.log(`📩 Magic link for ${email}: ${magicLink}`);
-
-  return c.json({ message: 'Magic link sent to your email (check console)' });
+  return c.json({ message: 'Magic link sent (check console)' });
 });
 
 /**
- * Step 2: Callback — Verify Token and Create Session
- * Example: GET /auth/magic/callback?token=xyz
+ * Step 2: Verify Token & Create Session
  */
-
-magicLinkController.get('/callback', async (c) => {
-  const token = c.req.query('token');
+magicLinkController.post('/callback', async (c) => {
+  const { token } = await c.req.json();
   if (!token) return c.json({ error: 'Token is required' }, 400);
 
-  // Lookup token
-  const record = await prisma.verificationToken.findUnique({ where: { token } });
-  if (!record || record.expiresAt < new Date()) {
+  const record = await prisma.magicLinkToken.findUnique({ where: { token } });
+  if (!record || record.expires < new Date()) {
     return c.json({ error: 'Invalid or expired token' }, 400);
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: record.email },
-  });
-  if (!user) {
-    return c.json({ error: 'User not found' }, 404);
-  }
+  const user = await prisma.user.findUnique({ where: { email: record.email } });
+  if (!user) return c.json({ error: 'User not found' }, 404);
 
-  // Create session
   const sessionToken = randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
+  const sessionExpiry = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+
   await prisma.session.create({
-    data: { userId: user.id, sessionToken, expires },
+    data: {
+      userId: user.id,
+      sessionToken,
+      userAgent: c.req.header('User-Agent'),
+      ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('CF-Connecting-IP'),
+      expires: sessionExpiry,
+    },
   });
 
-  // Delete verification token after use
-  await prisma.verificationToken.delete({ where: { token } });
+  const accessToken = await sign(
+    {
+      userId: user.id,
+      sessionToken,
+      exp: Math.floor(Date.now() / 1000) + 60 * 15,
+    },
+    process.env.JWT_SECRET!,
+  );
+
+  await prisma.magicLinkToken.deleteMany({ where: { token } });
 
   return c.json({
     message: 'Login successful',
-    sessionToken,
-    user,
+    accessToken,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    },
   });
 });

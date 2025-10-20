@@ -5,30 +5,29 @@ import { prisma } from '../../lib/prisma';
 
 export const verifyEmailController = new Hono();
 
-/** 
+/**
  * POST /auth/verify-email?token=abc123
  * 1️⃣ Checks the token
  * 2️⃣ Marks the user as verified
  * 3️⃣ Deletes the verification token
  */
 verifyEmailController.post('/', async (c) => {
-  const token = await c.req.json();
+  const token = c.req.query('token');
 
   if (!token) {
     return c.json({ error: 'Verification token is required' }, 400);
   }
 
   // Find the token record
-  const record = await prisma.verificationToken.findUnique({
+  const record = await prisma.emailVerificationToken.findUnique({
     where: { token },
-    include: { user: true },
   });
 
   if (!record) {
-    return c.json({ error: 'Invalid verification token' }, 400);
+    return c.json({ error: 'Invalid or expired verification token' }, 400);
   }
 
-  if (record.expiresAt < new Date()) {
+  if (record.expires < new Date()) {
     return c.json({ error: 'Verification token has expired' }, 400);
   }
 
@@ -47,8 +46,8 @@ verifyEmailController.post('/', async (c) => {
     data: { emailVerified: new Date() },
   });
 
-  // Delete the token (no reuse)
-  await prisma.verificationToken.delete({
+  // Delete the token (prevent reuse)
+  await prisma.emailVerificationToken.delete({
     where: { token },
   });
 

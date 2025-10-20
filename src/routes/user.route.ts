@@ -11,4 +11,5 @@ interface ChildRoute {
 export const userRoutes: ChildRoute[] = [
   { path: '/profile', route: userController.profile },
   { path: '/settings', route: userController.settings },
+  { path: '/sessions', route: userController.sessions },
 ];

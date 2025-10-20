@@ -6,6 +6,7 @@ import { prisma } from '../../lib/prisma';
 
 export const logoutController = new Hono();
 
+// ✅ Schema validation
 const logoutSchema = z.object({
   sessionToken: z.string().min(1, 'Session token is required'),
 });
@@ -20,7 +21,7 @@ logoutController.post('/', async (c) => {
 
   const { sessionToken } = parsed.data;
 
-  // Find session
+  // 🔍 Check for existing session
   const session = await prisma.session.findUnique({
     where: { sessionToken },
   });
@@ -29,8 +30,10 @@ logoutController.post('/', async (c) => {
     return c.json({ error: 'Session not found or already logged out' }, 404);
   }
 
-  // Delete session
-  await prisma.session.delete({ where: { sessionToken } });
+  // 🗑️ Delete session record
+  await prisma.session.delete({
+    where: { sessionToken },
+  });
 
   return c.json({ message: 'Logged out successfully' });
 });
