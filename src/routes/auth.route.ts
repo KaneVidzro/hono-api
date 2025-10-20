@@ -12,4 +12,10 @@ export const authRoutes: ChildRoute[] = [
   { path: '/magic', route: authController.magic },
   { path: '/signup', route: authController.signup },
   { path: '/logout', route: authController.logout },
+  { path: '/resend-verification', route: authController.resendVerification },
+  { path: '/verify-email', route: authController.verifyEmail },
+  { path: '/reset-password', route: authController.resetPassword },
+  { path: '/forget-password', route: authController.forgetPassword },
+  {path: '/login', route: authController.login},
+
 ];
