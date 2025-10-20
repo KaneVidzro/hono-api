@@ -6,15 +6,16 @@ import { requireAuth } from '../../middleware/requireAuth';
 
 export const sessionsController = new Hono();
 
-// 🔒 Protect all routes in this controller
+// 🔒 Apply auth middleware globally to all routes
 sessionsController.use('*', requireAuth);
 
 /**
  * GET /user/sessions
- * Lists all active sessions for the authenticated user.
+ * → Lists all active sessions for the authenticated user
  */
 sessionsController.get('/', async (c) => {
   const user = c.get('user');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const sessions = await prisma.session.findMany({
     where: { userId: user.id },
@@ -38,10 +39,12 @@ sessionsController.get('/', async (c) => {
 
 /**
  * DELETE /user/sessions/:id
- * Allows user to log out from a specific device/session.
+ * → Log out from a specific session (device)
  */
 sessionsController.delete('/:id', async (c) => {
   const user = c.get('user');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
   const sessionId = c.req.param('id');
 
   const session = await prisma.session.findUnique({
@@ -61,11 +64,12 @@ sessionsController.delete('/:id', async (c) => {
 
 /**
  * DELETE /user/sessions
- * Log out from all other devices (keep current session).
+ * → Log out from all other devices except current one
  */
 sessionsController.delete('/', async (c) => {
   const user = c.get('user');
   const currentSession = c.get('session');
+  if (!user || !currentSession) return c.json({ error: 'Unauthorized' }, 401);
 
   await prisma.session.deleteMany({
     where: {

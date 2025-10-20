@@ -7,17 +7,23 @@ import { z } from 'zod';
 
 export const profileController = new Hono();
 
-// 👇 Protect all routes in this controller
+// 🔒 Protect all routes in this controller
 profileController.use('*', requireAuth);
 
-// Validation schema for updates
+/**
+ * Zod schema for updating user profile
+ */
 const updateProfileSchema = z.object({
-  name: z.string().min(2).optional(),
+  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
 });
 
-// GET /user/profile — get current user's profile
+/**
+ * GET /user/profile
+ * → Returns the authenticated user's profile
+ */
 profileController.get('/', async (c) => {
   const user = c.get('user');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   return c.json({
     message: 'User profile fetched successfully',
@@ -25,17 +31,24 @@ profileController.get('/', async (c) => {
       id: user.id,
       name: user.name,
       email: user.email,
+      emailVerified: user.emailVerified,
       createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     },
   });
 });
 
-// PUT /user/profile — update user info
+/**
+ * PUT /user/profile
+ * → Updates user info
+ */
 profileController.put('/', async (c) => {
   const user = c.get('user');
-  const body = await c.req.json();
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
+  const body = await c.req.json();
   const parsed = updateProfileSchema.safeParse(body);
+
   if (!parsed.success) {
     return c.json({ errors: parsed.error.flatten() }, 400);
   }
@@ -43,6 +56,14 @@ profileController.put('/', async (c) => {
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: parsed.data,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      emailVerified: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 
   return c.json({
@@ -51,14 +72,20 @@ profileController.put('/', async (c) => {
   });
 });
 
-// DELETE /user/profile — delete account (and sessions)
+/**
+ * DELETE /user/profile
+ * → Deletes account and all active sessions
+ */
 profileController.delete('/', async (c) => {
   const user = c.get('user');
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
-  // Delete all sessions
-  await prisma.session.deleteMany({ where: { userId: user.id } });
-  // Delete user
-  await prisma.user.delete({ where: { id: user.id } });
+  await prisma.$transaction([
+    prisma.session.deleteMany({ where: { userId: user.id } }),
+    prisma.user.delete({ where: { id: user.id } }),
+  ]);
 
-  return c.json({ message: 'Account deleted successfully' });
+  return c.json({
+    message: 'Account and all sessions deleted successfully',
+  });
 });
