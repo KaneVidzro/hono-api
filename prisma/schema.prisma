@@ -1,4 +1,5 @@
 // @file: prisma/schema.prisma
+
 datasource db {
     provider = "postgresql"
     url      = env("DATABASE_URL")
@@ -9,7 +10,32 @@ generator client {
 }
 
 model User {
-    id    String @id @default(cuid())
-    name  String
-    email String @unique
+    id       String    @id @default(cuid())
+    name     String?
+    email    String    @unique
+    sessions Session[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Session {
+    sessionToken String   @unique
+    userId       String
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+// Model for storing verification tokens (magic links, email verification, etc.)
+model VerificationToken {
+    id        String   @id @default(cuid())
+    email     String
+    token     String   @unique
+    expiresAt DateTime
+
+    @@index([token])
+    @@index([email])
 }
