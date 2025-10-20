@@ -1,25 +1,26 @@
 // @file: src/controllers/auth/logout.controller.ts
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 
 export const logoutController = new Hono();
 
-/**
- * POST /auth/logout
- * Expects: { sessionToken: string }
- * Behavior:
- * - Deletes the session from DB
- * - Optionally clears session cookie (if implemented)
- */
-logoutController.post('/', async (c) => {
-  const { sessionToken } = await c.req.json();
+const logoutSchema = z.object({
+  sessionToken: z.string().min(1, 'Session token is required'),
+});
 
-  if (!sessionToken) {
-    return c.json({ error: 'Session token is required' }, 400);
+logoutController.post('/', async (c) => {
+  const body = await c.req.json();
+  const parsed = logoutSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.flatten() }, 400);
   }
 
-  // Check if session exists
+  const { sessionToken } = parsed.data;
+
+  // Find session
   const session = await prisma.session.findUnique({
     where: { sessionToken },
   });
@@ -28,13 +29,8 @@ logoutController.post('/', async (c) => {
     return c.json({ error: 'Session not found or already logged out' }, 404);
   }
 
-  // Delete the session
-  await prisma.session.delete({
-    where: { sessionToken },
-  });
-
-  // Optionally clear session cookie if you’re storing it in cookies
-  // c.header('Set-Cookie', 'sessionToken=; Path=/; HttpOnly; Max-Age=0');
+  // Delete session
+  await prisma.session.delete({ where: { sessionToken } });
 
   return c.json({ message: 'Logged out successfully' });
 });
